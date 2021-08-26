@@ -1,19 +1,43 @@
 from SDK.listExtension import ListExtension
 import re
-
+from flask import Flask
+from flask_cors import CORS
 import vk_api
 from vk_api.longpoll import VkLongPoll, VkEventType
 from SDK.stringExtension import StringExtension
-from SDK.thread import Thread
+from SDK.thread import Thread, ThreadManager
 from SDK import (database, jsonExtension, user, imports, cmd)
 
 config = jsonExtension.load("config.json")
+
+
+# flask server
+
+app = Flask(__name__)
+CORS(app)
+
+
+@app.route("/submit/<my_user_id>,<user_id>")
+def submit_user(my_user_id, user_id):
+    db = database.ThreadedDatabase(one_time=True)
+    main = ThreadManager.get_main_thread()
+    visited_user = user.User(main.vk, user_id)
+    my_user = user.User(main.vk, my_user_id)
+    if visited_user is None or my_user is None:
+        return "200"
+    struct = db.select_one_struct("select * from user_history where user_id = ? and visited_id = ?", [my_user_id, user_id])
+    if struct is not None:
+        struct.counter += 1
+    else:
+        db.execute("insert into user_history (user_id, visited_id, counter) values (?,?,1)", [my_user_id, user_id])
+    return "200"
 
 
 class LongPoll(VkLongPoll):
     def __init__(self, instance, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.instance = instance
+
     def listen(self):
         while True:
             try:
@@ -92,4 +116,6 @@ class MainThread(Thread):
 if __name__ == "__main__":
     _thread = MainThread()
     _thread.start()
-    _thread.join()
+    _flask = Thread(target=app.run, name="Flask")
+    _flask.start()
+    # _thread.join()

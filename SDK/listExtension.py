@@ -28,6 +28,12 @@ class ListExtension(list):
             l.append(index)
         return l
 
+    def all(self, function, *args, **kwargs):
+        for i in self:
+            if not function(i, *args, **kwargs):
+                return False
+        return True
+
     def has(self, item, returnIndex=False):
         for i, iterator in enumerate(self):
             if hasattr(iterator, "has") and callable(iterator.has):

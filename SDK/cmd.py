@@ -1,6 +1,6 @@
 # command + after func
 import difflib
-
+import inspect
 from SDK import database
 from SDK.jsonExtension import StructByAction
 
@@ -63,6 +63,13 @@ def set_after(name, uID, args=None):
     struct.args = args
 
 
+def call_command(function, *args):
+    function_args = inspect.getfullargspec(function).args
+    if len(function_args) == 1:
+        return function(args[0])
+    function(*args)
+
+
 def execute_command(botClass):
     selected = database.db.select_one_struct("select * from after_func where user_id = ?",
                                              [botClass.user.id])
@@ -88,7 +95,7 @@ def execute_command(botClass):
         # prefer names over fixed commands
         for cmd in command_poll:
             if cmd.name == name or name in cmd.aliases:
-                cmd.callable(botClass, botClass.args)
+                call_command(cmd.callable, botClass, botClass.args)
                 return
         for cmd in command_poll:
             if not cmd.fixTypo:
@@ -96,5 +103,5 @@ def execute_command(botClass):
             matches = difflib.get_close_matches(name, cmd.aliases, cutoff=0.7)
             if not matches:
                 continue
-            cmd.callable(botClass, botClass.args)
+            call_command(cmd.callable, botClass, botClass.args)
             return

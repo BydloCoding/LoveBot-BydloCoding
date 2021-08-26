@@ -12,6 +12,17 @@ class User(object):
     user_id_methods = {
         "messages.getHistory": "user_id", "users.get": "user_ids"}
 
+    def __new__(cls, vk, user_id, method = None):
+        try:
+            get = vk.users.get(user_ids = user_id, fields="photo_id")[0]
+            instance = super(User, cls).__new__(cls)
+            instance.request = get
+            instance.avatar = f"photo{get['photo_id']}" if get.get('photo_id') is not None else ""
+            instance.user_name = f"{get['first_name']} {get['last_name']}"
+            return instance
+        except:
+            return None
+
     def __init__(self, vk, user_id, method=None):
         self._vk = vk
         self._method = method
@@ -24,31 +35,7 @@ class User(object):
             return self._vk.messages.send(user_id=self.id, message=message, random_id=vk_api.utils.get_random_id(),
                                           **kwargs)
         except:
-            traceback.print_exc()
             return
-
-    @property
-    def user_name(self):
-        if re.match(r"-?\d+$", str(self.id)):
-            fetched = self._vk.users.get(user_ids=self.id)[0]
-            try:
-                return f"{fetched['first_name']} {fetched['last_name']}"
-            except:
-                return self.id
-        else:
-            return self.id
-
-    @property
-    def avatar(self):
-        if re.match(r"-?\d+$", str(self.id)):
-            fetched = self._vk.users.get(
-                user_ids=self.id, fields="photo_id")[0]
-            try:
-                return fetched.get('photo_id')
-            except:
-                return ""
-        else:
-            return ""
 
     def __getattr__(self, method):  # str8 up
         if '_' in method:

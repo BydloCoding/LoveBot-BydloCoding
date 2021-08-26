@@ -46,11 +46,11 @@ class Struct(object):
         instance.setattr("initialized", True, writeToDatabase=False)
         return instance
 
-    def __init__(self, database=None, table_name=None, **kwargs):
+    def __init__(self, database=None, **kwargs):
         # creating new struct
         self.db = database or db
+        self.table_name = self.get_table_name()
         if kwargs != {}:
-            self.table_name = self.get_table_name()
             values = ""
             final = []
             for k, v in kwargs.items():
@@ -77,7 +77,7 @@ class Struct(object):
                 expr, args, fromSerialized=self)
             if selected is None:
                 self.db.execute(
-                    f"insert or ignore into {table_name} ({keys}) values ({values})", final)
+                    f"insert or ignore into {self.table_name} ({keys}) values ({values})", final)
             else:
                 self.db.select_one_struct(
                     expr, args, fromSerialized=self)
@@ -138,7 +138,7 @@ class Struct(object):
             return to_sneak_case(self.__class__.__name__)
 
     def getFields(self):
-        return {k: v for k, v in vars(self).items() if not isinstance(v, ProtectedProperty)}
+        return {k: v for k, v in vars(self).items() if not isinstance(v, ProtectedProperty) and k not in ["db", "table_name"]}
 
     def destroy(self):
         fields = self.uniqueField()
@@ -158,8 +158,8 @@ class Struct(object):
         return f"{self.__class__.__name__}"
 
 
-def ThreadedStruct(name, **kwargs):
-    database = ThreadedDatabse()
+def ThreadedStruct(name, one_time=False, **kwargs):
+    database = ThreadedDatabase(one_time)
     return Struct.struct_by_name(table_name=name, database=database, **kwargs)
 
 
@@ -253,7 +253,7 @@ class Database(object):
 
     def select_one_struct(self, query: typing.AnyStr, *args: tuple or jsonExtension.StructByAction,
                           selectedStruct: Row = None,
-                          fromSerialized=None, table_name=None, select_function=None):
+                          fromSerialized=None, table_name=None, select_function=None, database=None):
         table_name = self.parse_table_name(query, table_name)
         select_function = select_function or self.select_one
         struct = select_function(
@@ -263,8 +263,8 @@ class Database(object):
         if not isinstance(table_name, str):
             raise Exception(
                 f"Table name's type is not string (table_name was not provided correctly?)\n{query=}\n{args=}\n{table_name=}")
-        myStruct: Struct = Struct.table_map[table_name](
-        ) if fromSerialized is None else fromSerialized
+        myStruct: Struct = Struct.table_map[table_name](database=database or self
+                                                        ) if fromSerialized is None else fromSerialized
         if struct is None:
             return None
         for k in struct.keys():
@@ -281,7 +281,7 @@ class Database(object):
         myStruct.setattr("initialized", True, writeToDatabase=False)
         return myStruct
 
-    def select_all_structs(self, query: typing.AnyStr, *args, select_function):
+    def select_all_structs(self, query: typing.AnyStr, *args, select_function=None):
         select_function = select_function or self.select
         structs = ListExtension.byList(select_function(query, *args))
         return ListExtension.byList([self.select_one_struct(query, *args, selectedStruct=x) for x in structs])
@@ -325,16 +325,18 @@ class Database(object):
 # Databse Class designed to be used with threads, uses same settings as main database
 
 
-class ThreadedDatabse(object):
+class ThreadedDatabase(object):
     class_poll = {}
 
-    def __new__(cls, **kwargs):
+    def __new__(cls, one_time=False, **kwargs):
         ident = threading.current_thread().ident
-        return super().__new__(cls, **kwargs) if cls.class_poll.get(ident) is None else cls.class_poll[ident]
+        return super().__new__(cls) if cls.class_poll.get(ident) is None else cls.class_poll[ident]
 
-    def __init__(self, **kwargs) -> None:
-        self.class_poll[thread.ThreadManager.thread_poll.find(
-            lambda it: it.ident == threading.current_thread().ident).ident] = self
+    def __init__(self, one_time=False, **kwargs) -> None:
+        super().__init__(**kwargs)
+        if not one_time:
+            self.class_poll[thread.ThreadManager.thread_poll.find(
+                lambda it: it.ident == threading.current_thread().ident).ident] = self
         self.db = sqlite3.connect(db.file, **kwargs)
         self.cursor = self.db.cursor()
         self.db.row_factory = sqlite3.Row
@@ -355,7 +357,7 @@ class ThreadedDatabse(object):
         return self.db.execute(query, args).fetchone()
 
     def select_one_struct(self, *args, **kwargs):
-        return db.select_one_struct(*args, select_function=self.select_one, **kwargs)
+        return db.select_one_struct(*args, select_function=self.select_one, database=self, **kwargs)
 
     def select_all_structs(self, *args):
         return db.select_all_structs(*args, select_function=self.select)

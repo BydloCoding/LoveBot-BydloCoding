@@ -37,7 +37,7 @@ class Thread(threading.Thread):
         self.tasks.append((task, args, kwargs))
 
     def check_tasks(self):
-        while self.tasks:
+        while len(self.tasks) > 0:
             task = self.tasks.pop(0)
             task[0](*task[1], **task[2])
 
